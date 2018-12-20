@@ -1,9 +1,15 @@
 <?php
+
 namespace App\Controller;
+
+use App\Entity\Category;
+use App\Entity\Person;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use App\Entity\Expense;
+use App\Entity\ShareGroup;
+
+
 /**
  * Class ExpenseController
  * @package App\Controller
@@ -12,18 +18,55 @@ use App\Entity\Expense;
 class ExpenseController extends BaseController
 {
     /**
-     * @Route("/", name="expense", methods="GET")
-     * @param Request $request
-     * @return Response
+     * @Route("/group/{slug}", name="expense", methods="GET")
      */
-    public function index(Request $request): Response
+    public function index(ShareGroup $shareGroup)
     {
         $expense = $this->getDoctrine()->getRepository(Expense::class)
-            ->findAll();
+            ->createQueryBuilder('e')
+            ->select('e', 'p', 'c')
+            ->leftJoin('e.person', 'p')
+            ->leftJoin('e.category', 'c')
+            ->where('p.shareGroup = :group')
+            ->setParameter(':group', $shareGroup)
+            ->getQuery()
+            ->getArrayResult()
+        ;
 
-        if ($request->isXmlHttpRequest()){
-            return $this->json($expense);
-        }
-        return $this->render('base.html.twig');
+        return $this->json($expense);
+    }
+
+    /**
+     * @Route("/", name="expense_new", methods="POST")
+     */
+    public function new(Request $request)
+    {
+        $data = $request->getContent();
+
+        $jsonData = json_decode($data, true);
+
+        $em = $this->getDoctrine()->getManager();
+
+        $category = $em->getRepository(Category::class)->find($jsonData["category"]);
+        $person = $em->getRepository(Person::class)->find($jsonData["person"]);
+
+        $expense = new Expense();
+        $expense->setTitle($jsonData["title"]);
+        $expense->setAmount($jsonData["amount"]);
+        $expense->setCategory($category);
+        $expense->setCreatedAt(new \DateTime());
+        $expense->setPerson($person);
+
+        $em->persist($expense);
+        $em->flush();
+
+        $exp = $this->getDoctrine()->getRepository(Expense::class)
+            ->createQueryBuilder('e')
+            ->where('e.id = :id')
+            ->setParameter(':id', $expense->getId())
+            ->getQuery()
+            ->getArrayResult();
+
+        return $this->json($exp[0]);
     }
 }
